@@ -48,13 +48,13 @@ class MemePlugin(Star):
     ):
         """meme详情 <名称>"""
         if not keyword:
-            yield event.plain_result("未指定要查看的meme")
+            yield event.plain_result("未指定表情名称。\n用法：/meme详情 <名称>\n发送 /meme列表 查看名称。")
             return
         keyword = str(keyword)
 
         result = self.manager.get_meme_info(keyword)
         if not result:
-            yield event.plain_result("未找到相关meme")
+            yield event.plain_result("未找到该表情。发送 /meme列表 查看可用名称。")
             return
 
         meme_info, preview = result
@@ -70,17 +70,17 @@ class MemePlugin(Star):
     ):
         """禁用meme <名称>"""
         if not meme_name:
-            yield event.plain_result("未指定要禁用的meme")
+            yield event.plain_result("未指定表情名称。\n用法：/禁用meme <名称>\n发送 /meme列表 查看名称。")
             return
         if not self.manager.is_meme_keyword(meme_name):
-            yield event.plain_result(f"meme: {meme_name} 不存在")
+            yield event.plain_result(f"未找到表情「{meme_name}」。发送 /meme列表 查看名称。")
             return
         if meme_name in self.conf["memes_disabled_list"]:
-            yield event.plain_result(f"meme: {meme_name} 已被禁用")
+            yield event.plain_result(f"表情「{meme_name}」已经停用，无需重复操作。")
             return
         self.conf["memes_disabled_list"].append(meme_name)
         self.conf.save_config()
-        yield event.plain_result(f"已禁用meme: {meme_name}")
+        yield event.plain_result(f"已停用表情「{meme_name}」。需要恢复时发送 /启用meme {meme_name}。")
         logger.info(f"当前禁用meme: {self.conf['memes_disabled_list']}")
 
     @filter.command("启用meme")
@@ -89,22 +89,29 @@ class MemePlugin(Star):
     ):
         """启用meme <名称>"""
         if not meme_name:
-            yield event.plain_result("未指定要禁用的meme")
+            yield event.plain_result("未指定表情名称。\n用法：/启用meme <名称>\n发送 /meme列表 查看名称。")
             return
         if not self.manager.is_meme_keyword(meme_name):
-            yield event.plain_result(f"meme: {meme_name} 不存在")
+            yield event.plain_result(f"未找到表情「{meme_name}」。发送 /meme列表 查看名称。")
             return
         if meme_name not in self.conf["memes_disabled_list"]:
-            yield event.plain_result(f"meme: {meme_name} 未被禁用")
+            yield event.plain_result(f"表情「{meme_name}」当前可用，无需重复操作。")
             return
         self.conf["memes_disabled_list"].remove(meme_name)
         self.conf.save_config()
-        yield event.plain_result(f"已禁用meme: {meme_name}")
+        yield event.plain_result(f"已恢复表情「{meme_name}」。")
 
     @filter.command("meme黑名单")
     async def list_supervisors(self, event: AstrMessageEvent):
         """查看禁用的meme"""
-        yield event.plain_result(f"当前禁用的meme: {self.conf['memes_disabled_list']}")
+        names = self.conf['memes_disabled_list']
+        if not names:
+            yield event.plain_result("暂无禁用的表情。\n禁用：/禁用meme <名称>")
+            return
+        yield event.plain_result(
+            f"禁用表情 · 共 {len(names)} 项\n" + "\n".join(f"- {name}" for name in names)
+            + "\n恢复：/启用meme <名称>"
+        )
 
     @filter.event_message_type(EventMessageType.ALL)
     async def meme_handle(self, event: AstrMessageEvent):
