@@ -50,9 +50,19 @@ def _reserved_first_words() -> frozenset[str]:
             continue
         for event_filter in getattr(handler, "event_filters", []) or []:
             if isinstance(event_filter, CommandFilter):
+                # 只收顶层指令：子指令的首词是所属指令组名，已由组名覆盖
+                parents = [
+                    p for p in (getattr(event_filter, "parent_command_names", None) or [""])
+                    if p
+                ]
+                if parents:
+                    continue
                 names.add(str(event_filter.command_name))
                 names.update(str(a) for a in (event_filter.alias or ()))
             elif isinstance(event_filter, CommandGroupFilter):
+                # 嵌套指令组同理，只收根组名
+                if getattr(event_filter, "parent_group", None) is not None:
+                    continue
                 names.add(str(event_filter.group_name))
                 names.update(str(a) for a in (event_filter.alias or ()))
 
