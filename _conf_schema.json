@@ -1,7 +1,13 @@
 {
     "need_prefix": {
         "description": "启用触发前缀",
-        "hint": "启用后需要前缀或者@bot来触发meme",
+        "hint": "启用后需要前缀或者@bot来触发meme；本机改造版已置 false，触发形态为「关键词 目标/参数」",
+        "type": "bool",
+        "default": true
+    },
+    "require_target": {
+        "description": "必须显式提供目标/参数",
+        "hint": "开启后：需要图片的 meme 必须由你给出目标（@某人 / @QQ号 / 直接附图 / 引用消息）或文字参数，否则不生成、静默跳过；不再自动使用你的头像、bot 头像或默认文字。关闭可恢复插件原始兜底行为",
         "type": "bool",
         "default": true
     },

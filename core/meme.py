@@ -313,14 +313,21 @@ class MemeManager:
         return meme_info, preview
 
     async def generate_meme(
-        self, event: AstrMessageEvent, keyword: str
+        self, event: AstrMessageEvent, keyword: str, require_explicit: bool = False
     ) -> bytes | None:
+        """生成 meme。
+
+        [patcher:meme-trigger] `require_explicit=True` 时透传给参数收集器，
+        用户未显式提供目标 / 参数会抛出 `MissingTargetError`。
+        """
         meme = self.find_meme(keyword)
         if not meme:
             return None
 
         params = self._get_params(meme)
-        images, texts, options = await self.collect.collect_params(event, params)
+        images, texts, options = await self.collect.collect_params(
+            event, params, require_explicit=require_explicit
+        )
 
         if self.is_py_version:
             run_sync = self.run_sync

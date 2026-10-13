@@ -1,4 +1,5 @@
 import asyncio
+import time
 from contextlib import suppress
 
 import astrbot.core.message.components as Comp
@@ -7,12 +8,57 @@ from astrbot.api.event import filter
 from astrbot.api.star import Context, Star
 from astrbot.core import AstrBotConfig
 from astrbot.core.platform import AstrMessageEvent
+from astrbot.core.star.filter.command import CommandFilter
+from astrbot.core.star.filter.command_group import CommandGroupFilter
 from astrbot.core.star.filter.event_message_type import EventMessageType
+from astrbot.core.star.star_handler import EventType, star_handlers_registry
 
 from .core.avatar import AvatarManager
 from .core.meme import MemeManager
-from .core.param import ParamsCollector
+from .core.param import MissingTargetError, ParamsCollector
 from .utils import compress_image
+
+# [patcher:meme-trigger] 「指令唯一性」守卫缓存：其它插件已注册指令的首词集合。
+_RESERVED_COMMANDS_CACHE: tuple[float, frozenset[str]] = (0.0, frozenset())
+_RESERVED_COMMANDS_TTL = 60.0
+
+
+def _reserved_first_words() -> frozenset[str]:
+    """收集其它插件已注册的「首词」指令名（含别名与指令组名）。
+
+    [patcher:meme-trigger] 本机改造后 meme 触发不再要求 @bot，任何「首词精确命中
+    meme 关键词」的消息都会进入判定；因此先排除其它插件的指令名，保证一个词只会
+    触发一个插件。结果带 60s 缓存，memelite 热重载会重建缓存。
+    """
+    global _RESERVED_COMMANDS_CACHE
+    now = time.monotonic()
+    cached_at, cached = _RESERVED_COMMANDS_CACHE
+    if cached and now - cached_at < _RESERVED_COMMANDS_TTL:
+        return cached
+
+    names: set[str] = set()
+    self_prefix = str(__package__ or "")
+    try:
+        handlers = star_handlers_registry.get_handlers_by_event_type(
+            EventType.AdapterMessageEvent
+        )
+    except Exception:
+        handlers = []
+    for handler in handlers:
+        module_path = str(getattr(handler, "handler_module_path", "") or "")
+        if "memelite" in module_path or (self_prefix and module_path.startswith(self_prefix)):
+            continue
+        for event_filter in getattr(handler, "event_filters", []) or []:
+            if isinstance(event_filter, CommandFilter):
+                names.add(str(event_filter.command_name))
+                names.update(str(a) for a in (event_filter.alias or ()))
+            elif isinstance(event_filter, CommandGroupFilter):
+                names.add(str(event_filter.group_name))
+                names.update(str(a) for a in (event_filter.alias or ()))
+
+    result = frozenset(name for name in names if name)
+    _RESERVED_COMMANDS_CACHE = (now, result)
+    return result
 
 
 class MemePlugin(Star):
@@ -115,8 +161,14 @@ class MemePlugin(Star):
 
     @filter.event_message_type(EventMessageType.ALL)
     async def meme_handle(self, event: AstrMessageEvent):
-        """
-        处理 meme 生成的主流程
+        """处理 meme 生成的主流程。
+
+        [patcher:meme-trigger] 本机三条改造：
+        1. 免 @bot：由配置 `need_prefix=false` 关闭原「需要前缀或 @bot」门槛，
+           触发形态固定为「关键词 [参数/目标]」；
+        2. 严格参数：`require_target=true` 时必须显式给出目标（@某人 / @QQ号 /
+           附图 / 引用）或文字参数，否则静默跳过，不再自动兜底发送者与 bot 头像；
+        3. 指令唯一性：首词命中其它插件已注册指令名时直接放弃，避免一词双触发。
         """
         if self.conf["need_prefix"] and not event.is_at_or_wake_command:
             return
@@ -128,6 +180,13 @@ class MemePlugin(Star):
         param = event.message_str.removeprefix(self.conf["extra_prefix"])
         if not param:
             return
+
+        # 指令唯一性守卫：首词是别的插件的指令名 -> 让位
+        first_word = param.split()[0] if param.split() else ""
+        if first_word and first_word in _reserved_first_words():
+            logger.debug(f"meme放弃: 「{first_word}」是其它插件的指令名")
+            return
+
         # 匹配 meme
         keyword = self.manager.match_meme_keyword(
             text=param, fuzzy_match=self.conf["fuzzy_match"]
@@ -138,9 +197,17 @@ class MemePlugin(Star):
         # 合成表情
         try:
             image = await asyncio.wait_for(
-                self.manager.generate_meme(event, keyword),
+                self.manager.generate_meme(
+                    event,
+                    keyword,
+                    require_explicit=bool(self.conf.get("require_target", True)),
+                ),
                 timeout=self.conf["meme_timeout"],
             )
+        except MissingTargetError as e:
+            # 没给目标 / 参数：静默跳过，不回复也不打扰
+            logger.debug(f"meme跳过（缺少目标/参数）: {keyword} | {e}")
+            return
         except asyncio.TimeoutError:
             logger.warning(f"meme生成超时: {keyword}")
             yield event.plain_result("meme生成超时")

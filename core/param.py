@@ -2,10 +2,17 @@ import base64
 from pathlib import Path
 
 from astrbot.core.config.astrbot_config import AstrBotConfig
-from astrbot.core.message.components import At, Image, Plain, Reply
+from astrbot.core.message.components import At, AtAll, Image, Plain, Reply
 from astrbot.core.platform.astr_message_event import AstrMessageEvent
 
 from .avatar import AvatarManager
+
+
+class MissingTargetError(Exception):
+    """[patcher:meme-trigger] 用户没有显式提供 meme 所需的目标 / 参数。
+
+    仅在 `require_explicit=True`（严格模式）下抛出，调用方应静默跳过。
+    """
 
 
 class ParamsCollector:
@@ -43,6 +50,21 @@ class ParamsCollector:
             return nickname, sex
         # TODO 适配更多消息平台
 
+    @staticmethod
+    def _is_ignored_at(seg: At, event: AstrMessageEvent) -> bool:
+        """[patcher:meme-trigger] 判断该 @ 段是否应被忽略。
+
+        原始实现用「是否为消息链第一段」来排除 @bot，但本机已改为免 @bot 触发，
+        `@某人 关键词` 这种写法会把真正的目标误丢。这里改为按真实身份排除：
+        @bot 自身、@全体成员（AtAll.qq == "all"）、以及非数字 qq。
+        """
+        if isinstance(seg, AtAll):
+            return True
+        qq = str(getattr(seg, "qq", "") or "")
+        if not qq.isdigit():
+            return True
+        return qq == str(event.get_self_id())
+
     async def _append_id_info(
         self,
         event: AstrMessageEvent,
@@ -53,9 +75,13 @@ class ParamsCollector:
     ):
         """补齐昵称、性别、头像信息"""
         nickname = name or target_id
-        if result := await self.get_extra(event, target_id):
-            nickname, sex = result
-            options["name"], options["gender"] = nickname, sex
+        try:
+            if result := await self.get_extra(event, target_id):
+                nickname, sex = result
+                options["name"], options["gender"] = nickname, sex
+        except Exception:
+            # 目标 QQ 取不到资料（不存在 / 平台不支持）时降级，不打断整张 meme
+            pass
         avatar = None
         if event.get_platform_name() in {"qq_official", "qq_official_webhook"}:
             appid = str(getattr(getattr(event.bot, "platform", None), "appid", ""))  # type: ignore
@@ -68,11 +94,19 @@ class ParamsCollector:
         if avatar:
             images.append((nickname, avatar))
 
-    async def collect_params(self, event: AstrMessageEvent, params):
-        """收集参数，返回 (images, texts, options)"""
+    async def collect_params(self, event: AstrMessageEvent, params, require_explicit: bool = False):
+        """收集参数，返回 (images, texts, options)。
+
+        [patcher:meme-trigger] `require_explicit=True` 时为严格模式：
+        用户必须显式给出 meme 所需的目标 / 参数（@某人、@QQ号、直接附图、引用里的图或文字），
+        否则抛 `MissingTargetError`，由调用方静默跳过。
+        不再自动回退到「发送者头像 → bot 头像 → default_texts」。
+        """
         images: list[tuple[str, bytes]] = []
         texts: list[str] = []
         options: dict[str, bool | str | int | float] = {}
+        explicit_images = 0
+        explicit_texts = 0
 
         chain = event.get_messages()
         send_id: str = event.get_sender_id()
@@ -80,11 +114,16 @@ class ParamsCollector:
         sender_name: str = str(event.get_sender_name())
 
         async def _process_segment(seg, name: str):
+            nonlocal explicit_images, explicit_texts
             if isinstance(seg, Image):
                 if src := seg.url or seg.file:
                     if image := await self._decode_image(src):
                         images.append((name, image))
-            elif isinstance(seg, At) and seg != chain[0]:
+                        explicit_images += 1
+            elif isinstance(seg, At):
+                if self._is_ignored_at(seg, event):
+                    return
+                before = len(images)
                 await self._append_id_info(
                     event,
                     str(seg.qq),
@@ -92,6 +131,8 @@ class ParamsCollector:
                     options,
                     seg.name or name,
                 )
+                if len(images) > before:
+                    explicit_images += 1
             elif isinstance(seg, Plain):
                 plains: list[str] = seg.text.strip().split(" ")
                 if len(plains) > 1:
@@ -112,16 +153,23 @@ class ParamsCollector:
                         #  解析@qq
                         elif text.startswith("@"):
                             target_id = text[1:]
+                            before = len(images)
                             await self._append_id_info(
                                 event, target_id, images, options
                             )
+                            if len(images) > before:
+                                explicit_images += 1
                         elif text.startswith("<@") and text.endswith(">"):
                             target_id = text[2:-1]
+                            before = len(images)
                             await self._append_id_info(
                                 event, target_id, images, options
                             )
+                            if len(images) > before:
+                                explicit_images += 1
                         elif text:
                             texts.append(text)
+                            explicit_texts += 1
 
         reply_seg = next((seg for seg in chain if isinstance(seg, Reply)), None)
         if reply_seg and reply_seg.chain:
@@ -130,6 +178,17 @@ class ParamsCollector:
                 await _process_segment(seg, name)
         for seg in chain:
             await _process_segment(seg, sender_name)
+
+        # [patcher:meme-trigger] 严格模式：只接受用户显式给出的目标 / 参数，
+        # 在此处（自动兜底之前）判定，兜底逻辑对严格模式不生效。
+        if require_explicit:
+            need_images = int(getattr(params, "min_images", 0) or 0)
+            need_texts = int(getattr(params, "min_texts", 0) or 0)
+            if explicit_images < need_images or explicit_texts < need_texts:
+                raise MissingTargetError(
+                    "缺少显式目标/参数："
+                    f"图片 {explicit_images}/{need_images}，文字 {explicit_texts}/{need_texts}"
+                )
 
         # 确保图片数量在min_images到max_images之间(参数足够即可)
         if len(images) < params.min_images:
