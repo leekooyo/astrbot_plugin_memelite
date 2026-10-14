@@ -4,6 +4,8 @@
 
 # astrbot_plugin_memelite
 
+> 本仓库由 leekooyo 独立维护，基于 [Zhalslar 原项目](https://github.com/Zhalslar/astrbot_plugin_memelite)。请通过 AstrBot 的「仓库地址安装」使用 `https://github.com/leekooyo/astrbot_plugin_memelite`；原始基线与维护差异见 [UPSTREAM.md](UPSTREAM.md)。
+
 _✨ [AstrBot](https://github.com/AstrBotDevs/AstrBot) 表情包制作插件 ✨_  
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
@@ -30,7 +32,7 @@ _✨ [AstrBot](https://github.com/AstrBotDevs/AstrBot) 表情包制作插件 ✨
 
 ### 第二步、安装本插件
 
-- 可以直接在 AstrBot 的插件市场搜索 `astrbot_plugin_memelite`，点击安装，默认安装的是 Rust 版本。
+- 在 AstrBot 中选择「通过仓库地址安装」，填写 `https://github.com/leekooyo/astrbot_plugin_memelite`；当前 `requirements.txt` 使用 `meme_generator~=0.2.0`。
 - ~如果需要安装 Python 版，请手动下载仓库后，更改requirements.txt中`meme_generator~=0.2.0`为`meme_generator~=0.1.12`。然后将astrbot_plugin_memelite文件夹放入插件目录`data\plugins`，重启Astrbot即可。~ Python 版目前的pillow依赖与Astrbot的pillow依赖版本冲突，无法安装。
 - 装好后不推荐再换版本，如果实在需要切换，请进入Astrbot的虚拟环境，手动删除原来的meme_generator，然后更改requirements.txt中的meme_generator版本号，再重新运行插件的requirements.txt文件安装依赖。
 
@@ -61,6 +63,7 @@ apt-get update && apt-get install -y libgl1 libglib2.0-0
 | 配置项              | 描述               | 默认值    |
 |---------------------|------------------|---------|
 | `need_prefix`       | 启用触发前缀，需要前缀或 @bot 才能触发 meme | `true` |
+| `require_target`    | 生成表情时要求明确给出目标，避免误用聊天中的头像 | `true` |
 | `extra_prefix`      | 额外前缀，填写后需附加该前缀才能触发，留空不启用 | `""` |
 | `fuzzy_match`       | 模糊匹配触发，消息中含关键词即可触发，易误触 | `false` |
 | `is_compress_image` | 压缩图片，限制生成图长宽不超过 512px 防刷屏 | `true` |
@@ -210,11 +213,9 @@ port = 2233  # web server 端口
 
 - 如果遇到中文字体显示为乱码，请按照[表情包生成器 meme-generator](https://github.com/MeetWq/meme-generator) 的文档安装缺失的字体。
 
-- 如果想第一时间得到反馈，请进作者的插件反馈 QQ 群：460973561（不点 star 不给进）
+- 此维护版的问题请在本仓库提交 Issue；运行时下载的资源、生成图片和 AstrBot 配置文件不要提交到仓库。
 
 ## 👥 贡献指南
-
-@ -222,11 +80,10 @@ port = 2233  # web server 端口
 
 - 💡 提出新功能建议
 - 🔧 提交 Pull Request 改进代码
