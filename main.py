@@ -96,7 +96,7 @@ class MemePlugin(Star):
         if output := await self.manager.render_meme_list_image():
             yield event.chain_result([Comp.Image.fromBytes(output)])
         else:
-            yield event.plain_result("meme列表图生成失败")
+            yield event.plain_result("图片生成失败，请稍后重试。")
 
     @filter.command("meme详情", alias={"表情详情", "meme信息"})
     async def meme_details_show(
@@ -115,7 +115,7 @@ class MemePlugin(Star):
 
         meme_info, preview = result
         chain = [
-            Comp.Plain(meme_info),
+            Comp.Plain(meme_info + "使用：发送表情名称，并附上所需的图片、文字或 @群友。"),
             Comp.Image.fromBytes(preview),
         ]
         yield event.chain_result(chain)
