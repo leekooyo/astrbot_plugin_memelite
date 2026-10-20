@@ -1,7 +1,7 @@
 {
     "need_prefix": {
         "description": "启用触发前缀",
-        "hint": "启用后需要前缀或者@bot来触发meme；本机改造版已置 false，触发形态为「关键词 目标/参数」",
+        "hint": "默认开启：需要指令前缀或 @机器人。关闭后可用「关键词 目标/参数」触发；与其他插件的顶层指令同名时不会触发。",
         "type": "bool",
         "default": true
     },
@@ -12,7 +12,7 @@
         "default": true
     },
     "extra_prefix": {
-        "description": "'额外前缀",
+        "description": "额外前缀",
         "hint": "填写后, 需要额外附加一个前缀来触发meme, 留空则不启用",
         "type": "string",
         "default": ""
